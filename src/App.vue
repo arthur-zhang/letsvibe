@@ -1,17 +1,32 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { open } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 
 interface Workspace {
   id: string;
-  branchName: string;
-  repoName: string;
-  lastActive: string;
+  repository_id: string | null;
+  branch: string | null;
+  directory_name: string | null;
+  state: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-interface Repository {
+interface Repo {
   id: string;
-  name: string;
+  name: string | null;
+  remote_url: string | null;
+  root_path: string | null;
+  default_branch: string | null;
+}
+
+interface RepoWithWorkspaces {
+  id: string;
+  name: string | null;
+  remote_url: string | null;
+  root_path: string | null;
+  default_branch: string | null;
   workspaces: Workspace[];
 }
 
@@ -21,33 +36,41 @@ interface FileItem {
   children?: FileItem[];
 }
 
-const repositories = ref<Repository[]>([
-  {
-    id: '1',
-    name: 'open-waf',
-    workspaces: []
-  },
-  {
-    id: '2',
-    name: 'vibe-master',
-    workspaces: [
-      { id: '2-1', branchName: 'arthur-zhang/montre...', repoName: 'montreal-v1', lastActive: '24m ago' }
-    ]
-  },
-  {
-    id: '3',
-    name: 'autoglm-rs',
-    workspaces: []
-  },
-  {
-    id: '4',
-    name: 'sarmor-edge',
-    workspaces: [
-      { id: '4-1', branchName: 'arthur-zhang/machu...', repoName: 'machu-picchu', lastActive: '4d ago' },
-      { id: '4-2', branchName: 'arthur-zhang/fw-revi...', repoName: 'curitiba', lastActive: '4d ago' }
-    ]
+const repositories = ref<RepoWithWorkspaces[]>([]);
+
+const isLoading = ref<boolean>(true);
+
+const loadRepositories = async () => {
+  try {
+    isLoading.value = true;
+    const repos = await invoke<RepoWithWorkspaces[]>('get_repositories');
+    repositories.value = repos;
+  } catch (error) {
+    console.error('Failed to load repositories:', error);
+    terminalOutput.value.push(`✗ Error loading repositories: ${error}`);
+  } finally {
+    isLoading.value = false;
   }
-]);
+};
+
+onMounted(() => {
+  // Give the database time to initialize, then load
+  setTimeout(loadRepositories, 500);
+});
+
+const formatTime = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+};
 
 const files = ref<FileItem[]>([
   {
@@ -105,17 +128,21 @@ const closeRepoMenu = () => {
   activeRepoMenu.value = null;
 };
 
-const createNewWorkspace = (repoId: string) => {
+const createNewWorkspace = async (repoId: string) => {
   const repo = repositories.value.find(r => r.id === repoId);
   if (repo) {
-    const newWorkspace: Workspace = {
-      id: `${repoId}-${Date.now()}`,
-      branchName: 'new-branch',
-      repoName: repo.name,
-      lastActive: 'just now'
-    };
-    repo.workspaces.push(newWorkspace);
-    terminalOutput.value.push(`✓ Created new workspace in ${repo.name}`);
+    try {
+      const workspace = await invoke<Workspace>('create_workspace', {
+        repositoryId: repoId,
+        branch: 'new-branch',
+        directoryName: null,
+      });
+      repo.workspaces.push(workspace);
+      terminalOutput.value.push(`✓ Created new workspace in ${repo.name}`);
+    } catch (error) {
+      console.error('Error creating workspace:', error);
+      terminalOutput.value.push(`✗ Error: ${error}`);
+    }
   }
 };
 
@@ -131,13 +158,16 @@ const openProject = async () => {
       const path = selected as string;
       const projectName = path.split('/').pop() || 'Unknown Project';
 
-      const newRepo: Repository = {
-        id: Date.now().toString(),
+      const newRepo = await invoke<Repo>('create_repo', {
         name: projectName,
-        workspaces: []
-      };
+        rootPath: path,
+        remoteUrl: null,
+      });
 
-      repositories.value.push(newRepo);
+      repositories.value.push({
+        ...newRepo,
+        workspaces: [],
+      });
       closeAddMenu();
       closeRepoMenu();
 
@@ -185,13 +215,16 @@ const cloneRepository = async () => {
 
       const repoName = cloneUrl.value.split('/').pop()?.replace('.git', '') || 'repository';
 
-      const newRepo: Repository = {
-        id: Date.now().toString(),
+      const newRepo = await invoke<Repo>('create_repo', {
         name: repoName,
-        workspaces: []
-      };
+        rootPath: path,
+        remoteUrl: cloneUrl.value,
+      });
 
-      repositories.value.push(newRepo);
+      repositories.value.push({
+        ...newRepo,
+        workspaces: [],
+      });
       closeCloneModal();
 
       terminalOutput.value.push(`✓ Repository cloned successfully`);
@@ -209,7 +242,20 @@ const cloneRepository = async () => {
     <div class="w-72 bg-[#1e1e1e] border-r border-[#333] flex flex-col">
       <!-- Repository List -->
       <div class="flex-1 overflow-y-auto">
+        <!-- Loading State -->
+        <div v-if="isLoading" class="flex items-center justify-center py-8">
+          <span class="text-sm text-[#808080]">Loading...</span>
+        </div>
+
+        <!-- Empty State -->
+        <div v-else-if="repositories.length === 0" class="px-4 py-8 text-center">
+          <p class="text-sm text-[#808080] mb-2">No repositories yet</p>
+          <p class="text-xs text-[#606060]">Click "Add" below to add a project</p>
+        </div>
+
+        <!-- Repository List -->
         <div
+          v-else
           v-for="repo in repositories"
           :key="repo.id"
           class="border-b border-[#333]"
@@ -280,9 +326,9 @@ const cloneRepository = async () => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 17h.01M17 7a2 2 0 100-4 2 2 0 000 4zM7 11a4 4 0 010-8M7 21a4 4 0 010-8m10-6v14"></path>
               </svg>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-[#e0e0e0] truncate">{{ workspace.branchName }}</div>
+                <div class="text-sm font-medium text-[#e0e0e0] truncate">{{ workspace.branch || 'No branch' }}</div>
                 <div class="text-xs text-[#707070] mt-0.5">
-                  {{ workspace.repoName }} · {{ workspace.lastActive }}
+                  {{ workspace.directory_name || repo.name }} · {{ formatTime(workspace.updated_at) }}
                 </div>
               </div>
             </div>
