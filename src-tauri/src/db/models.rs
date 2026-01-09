@@ -122,4 +122,8 @@ pub struct Workspace {
     pub linked_workspace_ids: Option<String>,
     pub notes: Option<String>,
     pub intended_target_branch: Option<String>,
+    #[sqlx(default)]
+    pub git_insertions: Option<i64>,
+    #[sqlx(default)]
+    pub git_deletions: Option<i64>,
 }
