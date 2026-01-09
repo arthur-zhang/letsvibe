@@ -92,10 +92,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log('Opening file with params:', { workspaceId: selectedWorkspace, filePath: file.path });
+      console.log('Opening file with params:', {
+        workspaceId: selectedWorkspace,
+        filePath: file.path,
+        fileObject: file
+      });
       const content = await invoke<string>('read_file_content', {
-        workspace_id: selectedWorkspace,
-        file_path: file.path,
+        workspaceId: selectedWorkspace,
+        filePath: file.path,
       });
 
       const newFile: OpenFile = {
