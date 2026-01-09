@@ -27,7 +27,7 @@ function AppContent() {
   };
 
   return (
-    <div className="h-screen w-screen flex overflow-hidden bg-[#1e1e1e] text-[#cccccc]">
+    <div className="h-screen w-screen flex overflow-hidden bg-[#181818] text-[#cccccc]">
       <div style={{ width: `${sidebarWidth}px` }} className="flex-shrink-0">
         <Sidebar />
       </div>

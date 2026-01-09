@@ -6,13 +6,13 @@ import type { RepoWithWorkspaces, Workspace, FileItem, OpenFile } from '@/types'
 interface AppContextType {
   // 数据状态
   repositories: RepoWithWorkspaces[];
-  openFiles: OpenFile[];
-  activeFileId: string | null;
+  currentFile: OpenFile | null;
   files: FileItem[];
   terminalOutput: string[];
 
   // UI 状态
   selectedWorkspace: string | null;
+  activeTab: 'file' | 'chat';
   showTerminal: boolean;
   isLoading: boolean;
   sidebarWidth: number;
@@ -22,8 +22,8 @@ interface AppContextType {
   loadRepositories: () => Promise<void>;
   selectWorkspace: (id: string) => Promise<void>;
   openFile: (path: string, name: string) => Promise<void>;
-  closeFile: (id: string) => void;
-  setActiveFile: (id: string) => void;
+  closeCurrentFile: () => void;
+  setActiveTab: (tab: 'file' | 'chat') => void;
   createWorkspace: (repoId: string) => Promise<void>;
   cloneRepository: (url: string) => Promise<void>;
   openProject: () => Promise<void>;
@@ -39,14 +39,14 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [repositories, setRepositories] = useState<RepoWithWorkspaces[]>([]);
-  const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
-  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [currentFile, setCurrentFile] = useState<OpenFile | null>(null);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [terminalOutput, setTerminalOutput] = useState<string[]>([
     '✓ Application initialized',
     '✓ Database connection established',
   ]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'file' | 'chat'>('chat');
   const [showTerminal, setShowTerminal] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(288); // w-72 = 18rem = 288px
@@ -75,8 +75,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       setSelectedWorkspace(id);
       setFiles([]);
-      setOpenFiles([]);
-      setActiveFileId(null);
+      setCurrentFile(null);
 
       const workspaceFiles = await invoke<FileItem[]>('get_workspace_files', { workspaceId: id });
       setFiles(workspaceFiles);
@@ -88,13 +87,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [addTerminalOutput]);
 
   const openFile = useCallback(async (path: string, name: string) => {
-    // 检查文件是否已打开
-    const existingFile = openFiles.find(f => f.path === path);
-    if (existingFile) {
-      setActiveFileId(existingFile.id);
-      return;
-    }
-
     try {
       console.log('Opening file with params:', {
         workspaceId: selectedWorkspace,
@@ -113,27 +105,22 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         content,
       };
 
-      setOpenFiles(prev => [...prev, newFile]);
-      setActiveFileId(newFile.id);
+      setCurrentFile(newFile);
+      setActiveTab('file');
       addTerminalOutput(`Opened file: ${name}`, 'success');
     } catch (error) {
       addTerminalOutput(`Failed to open file: ${error}`, 'error');
       console.error('Failed to open file:', error);
     }
-  }, [openFiles, selectedWorkspace, addTerminalOutput]);
+  }, [selectedWorkspace, addTerminalOutput]);
 
-  const closeFile = useCallback((id: string) => {
-    setOpenFiles(prev => prev.filter(f => f.id !== id));
-    if (activeFileId === id) {
-      setActiveFileId(() => {
-        const remainingFiles = openFiles.filter(f => f.id !== id);
-        return remainingFiles.length > 0 ? remainingFiles[remainingFiles.length - 1].id : null;
-      });
-    }
-  }, [activeFileId, openFiles]);
+  const handleSetActiveTab = useCallback((tab: 'file' | 'chat') => {
+    setActiveTab(tab);
+  }, []);
 
-  const setActiveFile = useCallback((id: string) => {
-    setActiveFileId(id);
+  const closeCurrentFile = useCallback(() => {
+    setCurrentFile(null);
+    setActiveTab('chat');
   }, []);
 
   const createWorkspace = useCallback(async (repoId: string) => {
@@ -198,8 +185,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (selectedWorkspace === id) {
         setSelectedWorkspace(null);
         setFiles([]);
-        setOpenFiles([]);
-        setActiveFileId(null);
+        setCurrentFile(null);
       }
       addTerminalOutput('Workspace deleted', 'success');
     } catch (error) {
@@ -219,18 +205,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const value: AppContextType = {
     repositories,
-    openFiles,
-    activeFileId,
+    currentFile,
     files,
     terminalOutput,
     selectedWorkspace,
+    activeTab,
     showTerminal,
     isLoading,
     loadRepositories,
     selectWorkspace,
     openFile,
-    closeFile,
-    setActiveFile,
+    closeCurrentFile,
+    setActiveTab: handleSetActiveTab,
     createWorkspace,
     cloneRepository,
     openProject,

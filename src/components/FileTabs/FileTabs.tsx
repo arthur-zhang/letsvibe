@@ -9,7 +9,7 @@ export function FileTabs() {
   // 如果没有打开的文件，显示空状态
   if (openFiles.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#1e1e1e] text-[#909090]">
+      <div className="h-full flex items-center justify-center bg-[#181818] text-[#909090]">
         <div className="text-center">
           <p className="text-lg mb-2">No files open</p>
           <p className="text-sm">Select a file from the file tree to view its contents</p>
@@ -22,9 +22,9 @@ export function FileTabs() {
     <Tabs
       value={activeFileId || openFiles[0]?.id}
       onValueChange={setActiveFile}
-      className="h-full flex flex-col bg-[#1e1e1e] overflow-hidden"
+      className="h-full flex flex-col bg-[#181818] overflow-hidden"
     >
-      <TabsList className="flex-shrink-0 w-full h-10 justify-start rounded-none bg-[#252526] border-b border-[#333] p-0">
+      <TabsList className="flex-shrink-0 w-full h-10 justify-start rounded-none bg-[#1a1a1a] border-b border-[#2a2a2a] p-0">
         {openFiles.map((file) => (
           <div
             key={file.id}
@@ -32,7 +32,7 @@ export function FileTabs() {
           >
             <TabsTrigger
               value={file.id}
-              className="h-10 px-4 pr-8 rounded-none border-r border-[#333] text-[#909090] data-[state=active]:bg-[#1e1e1e] data-[state=active]:text-white hover:bg-[#2a2d2e] transition-colors"
+              className="h-10 px-4 pr-8 rounded-none border-r border-[#2a2a2a] text-[#909090] data-[state=active]:bg-[#181818] data-[state=active]:text-white hover:bg-[#222222] transition-colors"
             >
               {file.name}
             </TabsTrigger>

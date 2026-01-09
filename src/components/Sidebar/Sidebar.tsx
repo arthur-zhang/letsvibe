@@ -4,7 +4,7 @@ import { AddMenu } from './AddMenu';
 
 export function Sidebar() {
   return (
-    <div className="w-full bg-[#252525] border-r border-[#333] flex flex-col h-full">
+    <div className="w-full bg-[#1a1a1a] border-r border-[#2a2a2a] flex flex-col h-full">
       <SidebarHeader />
       <RepositoryList />
       <AddMenu />
