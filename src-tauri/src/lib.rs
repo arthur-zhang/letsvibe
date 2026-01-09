@@ -66,6 +66,7 @@ pub fn run() {
             commands::create_workspace,
             commands::delete_repo,
             commands::delete_workspace,
+            commands::get_workspace_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

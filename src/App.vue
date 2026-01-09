@@ -74,27 +74,7 @@ const formatTime = (dateStr: string): string => {
   return `${days}d ago`;
 };
 
-const files = ref<FileItem[]>([
-  {
-    name: 'src',
-    type: 'folder',
-    children: [
-      { name: 'App.vue', type: 'file' },
-      { name: 'main.ts', type: 'file' },
-      { name: 'index.css', type: 'file' },
-    ]
-  },
-  {
-    name: 'public',
-    type: 'folder',
-    children: [
-      { name: 'vite.svg', type: 'file' },
-    ]
-  },
-  { name: 'package.json', type: 'file' },
-  { name: 'tailwind.config.js', type: 'file' },
-  { name: 'tsconfig.json', type: 'file' },
-]);
+const files = ref<FileItem[]>([]);
 
 const terminalOutput = ref<string[]>([
   '$ npm run dev',
@@ -111,6 +91,28 @@ const showCloneModal = ref<boolean>(false);
 const cloneUrl = ref<string>('');
 const collapsedRepos = ref<Set<string>>(new Set());
 const hoveredRepo = ref<string | null>(null);
+
+const selectWorkspace = async (workspaceId: string) => {
+  selectedWorkspace.value = workspaceId;
+
+  console.log('Selecting workspace:', workspaceId);
+
+  // Load workspace files
+  try {
+    console.log('Calling get_workspace_files...');
+    const workspaceFiles = await invoke<FileItem[]>('get_workspace_files', {
+      workspaceId,
+    });
+    console.log('Received workspace files:', workspaceFiles);
+    files.value = workspaceFiles;
+    terminalOutput.value.push(`✓ Loaded ${workspaceFiles.length} items from workspace`);
+  } catch (error) {
+    console.error('Failed to load workspace files:', error);
+    terminalOutput.value.push(`✗ Error loading workspace files: ${error}`);
+    // Reset to empty on error
+    files.value = [];
+  }
+};
 
 const openAddMenu = () => {
   showAddMenu.value = true;
@@ -376,7 +378,7 @@ const cloneRepository = async () => {
                   'flex items-start px-4 py-3 cursor-pointer hover:bg-[#2a2a2a] transition-colors',
                   selectedWorkspace === workspace.id ? 'bg-[#2a2a2a]' : ''
                 ]"
-                @click="selectedWorkspace = workspace.id"
+                @click="selectWorkspace(workspace.id)"
               >
                 <!-- Branch Icon -->
                 <svg class="w-4 h-4 mt-0.5 mr-3 text-[#808080] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -660,8 +662,17 @@ const FileTree = defineComponent({
   },
   data() {
     return {
-      expandedFolders: new Set(['src', 'public'])
+      expandedFolders: new Set<string>()
     };
+  },
+  watch: {
+    items: {
+      handler() {
+        // Reset expanded folders when items change
+        this.expandedFolders.clear();
+      },
+      deep: true,
+    },
   },
   methods: {
     toggleFolder(name: string) {
@@ -673,7 +684,7 @@ const FileTree = defineComponent({
     }
   },
   template: `
-    <div>
+    <div v-if="items && items.length > 0">
       <div
         v-for="item in items"
         :key="item.name"
@@ -720,6 +731,9 @@ const FileTree = defineComponent({
           :level="level + 1"
         />
       </div>
+    </div>
+    <div v-else class="px-2 py-4 text-xs text-[#606060] text-center">
+      No files to display
     </div>
   `,
 });

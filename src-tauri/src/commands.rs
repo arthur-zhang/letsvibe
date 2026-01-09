@@ -376,3 +376,117 @@ pub async fn delete_workspace(state: State<'_, AppState>, id: String) -> Result<
 
     Ok(())
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileItem {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub file_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub children: Option<Vec<FileItem>>,
+}
+
+/// Read directory structure for a workspace
+#[tauri::command]
+pub async fn get_workspace_files(
+    state: State<'_, AppState>,
+    workspace_id: String,
+) -> Result<Vec<FileItem>, String> {
+    let db = state.db.lock().await;
+    let pool = db.as_ref().ok_or("Database not initialized")?;
+
+    // Get workspace info
+    let workspace: Workspace = sqlx::query_as("SELECT * FROM workspaces WHERE id = ?")
+        .bind(&workspace_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Workspace not found: {}", e))?;
+
+    // Get repository info
+    let repo_id = workspace
+        .repository_id
+        .ok_or("Workspace has no repository")?;
+    let repo: Repo = sqlx::query_as("SELECT * FROM repos WHERE id = ?")
+        .bind(&repo_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Repository not found: {}", e))?;
+
+    let repo_path = repo.root_path.ok_or("Repository has no root path")?;
+    let directory_name = workspace
+        .directory_name
+        .ok_or("Workspace has no directory name")?;
+
+    // Calculate worktree path
+    let home_dir = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let repo_name = Path::new(&repo_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Cannot determine repository name")?;
+    let worktree_path = home_dir
+        .join("letsvibe-workspaces")
+        .join(repo_name)
+        .join(&directory_name);
+
+    if !worktree_path.exists() {
+        return Err(format!(
+            "Workspace directory does not exist: {}",
+            worktree_path.display()
+        ));
+    }
+
+    // Read directory structure
+    read_directory_structure(&worktree_path)
+}
+
+/// Recursively read directory structure
+fn read_directory_structure(path: &Path) -> Result<Vec<FileItem>, String> {
+    let mut items = Vec::new();
+
+    let entries = std::fs::read_dir(path)
+        .map_err(|e| format!("Failed to read directory {}: {}", path.display(), e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let file_name = entry
+            .file_name()
+            .to_string_lossy()
+            .to_string();
+
+        // Skip hidden files and git directory
+        if file_name.starts_with('.') {
+            continue;
+        }
+
+        let metadata = entry
+            .metadata()
+            .map_err(|e| format!("Failed to get metadata: {}", e))?;
+
+        if metadata.is_dir() {
+            // For directories, we don't recursively load children yet
+            // They will be loaded on demand when the user expands them
+            items.push(FileItem {
+                name: file_name,
+                file_type: "folder".to_string(),
+                children: Some(Vec::new()),
+            });
+        } else {
+            items.push(FileItem {
+                name: file_name,
+                file_type: "file".to_string(),
+                children: None,
+            });
+        }
+    }
+
+    // Sort: folders first, then files, both alphabetically
+    items.sort_by(|a, b| {
+        match (a.file_type.as_str(), b.file_type.as_str()) {
+            ("folder", "file") => std::cmp::Ordering::Less,
+            ("file", "folder") => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        }
+    });
+
+    Ok(items)
+}
