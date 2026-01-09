@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod place_names;
 
 use std::path::PathBuf;
 use std::sync::Arc;

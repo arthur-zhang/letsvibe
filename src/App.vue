@@ -134,11 +134,9 @@ const createNewWorkspace = async (repoId: string) => {
     try {
       const workspace = await invoke<Workspace>('create_workspace', {
         repositoryId: repoId,
-        branch: 'new-branch',
-        directoryName: null,
       });
       repo.workspaces.push(workspace);
-      terminalOutput.value.push(`✓ Created new workspace in ${repo.name}`);
+      terminalOutput.value.push(`✓ Created workspace "${workspace.directory_name}" in ${repo.name}`);
     } catch (error) {
       console.error('Error creating workspace:', error);
       terminalOutput.value.push(`✗ Error: ${error}`);
