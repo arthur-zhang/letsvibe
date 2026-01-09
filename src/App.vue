@@ -11,6 +11,8 @@ interface Workspace {
   state: string | null;
   created_at: string;
   updated_at: string;
+  git_insertions?: number;
+  git_deletions?: number;
 }
 
 interface Repo {
@@ -107,6 +109,8 @@ const activeRepoMenu = ref<string | null>(null);
 const showAddMenu = ref<boolean>(false);
 const showCloneModal = ref<boolean>(false);
 const cloneUrl = ref<string>('');
+const collapsedRepos = ref<Set<string>>(new Set());
+const hoveredRepo = ref<string | null>(null);
 
 const openAddMenu = () => {
   showAddMenu.value = true;
@@ -194,6 +198,14 @@ const quickStart = () => {
   closeAddMenu();
 };
 
+const toggleRepoCollapse = (repoId: string) => {
+  if (collapsedRepos.value.has(repoId)) {
+    collapsedRepos.value.delete(repoId);
+  } else {
+    collapsedRepos.value.add(repoId);
+  }
+};
+
 const cloneRepository = async () => {
   if (!cloneUrl.value.trim()) {
     return;
@@ -240,6 +252,14 @@ const cloneRepository = async () => {
     <div class="w-72 bg-[#1e1e1e] border-r border-[#333] flex flex-col">
       <!-- Repository List -->
       <div class="flex-1 overflow-y-auto">
+        <!-- Workspaces Header (Top Entry) -->
+        <div class="px-4 py-3 border-b border-[#333] flex items-center cursor-pointer hover:bg-[#252525]">
+          <svg class="w-4 h-4 mr-2 text-[#808080]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+          </svg>
+          <span class="text-sm font-medium text-[#e0e0e0]">Workspaces</span>
+        </div>
+
         <!-- Loading State -->
         <div v-if="isLoading" class="flex items-center justify-center py-8">
           <span class="text-sm text-[#808080]">Loading...</span>
@@ -257,34 +277,52 @@ const cloneRepository = async () => {
           v-for="repo in repositories"
           :key="repo.id"
           class="border-b border-[#333]"
+          @mouseenter="hoveredRepo = repo.id"
+          @mouseleave="hoveredRepo = null"
         >
-          <!-- Repository Header -->
-          <div class="px-4 py-3">
-            <h2 class="text-sm font-medium text-[#e0e0e0]">{{ repo.name }}</h2>
-          </div>
+          <!-- Repository Header with Hover Actions -->
+          <div class="relative px-4 py-3 flex items-center justify-between group">
+            <h2 class="text-sm font-medium text-[#e0e0e0] flex-1 truncate">{{ repo.name }}</h2>
 
-          <!-- New Workspace Row -->
-          <div class="relative flex items-center justify-between px-4 py-2 hover:bg-[#2a2a2a] cursor-pointer">
-            <button
-              @click="createNewWorkspace(repo.id)"
-              class="flex items-center text-[#808080] hover:text-[#b0b0b0] transition-colors"
+            <!-- Hover Actions -->
+            <div
+              v-if="hoveredRepo === repo.id"
+              class="flex items-center space-x-1 ml-2"
             >
-              <span class="text-lg mr-2">+</span>
-              <span class="text-sm">New workspace</span>
-            </button>
-            <button
-              @click.stop="toggleRepoMenu(repo.id)"
-              class="text-[#606060] hover:text-[#909090] transition-colors p-1"
-            >
-              <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z"></path>
-              </svg>
-            </button>
+              <!-- Collapse Button -->
+              <button
+                @click.stop="toggleRepoCollapse(repo.id)"
+                class="p-1 text-[#606060] hover:text-[#909090] hover:bg-[#2a2a2a] rounded transition-colors"
+                :title="collapsedRepos.has(repo.id) ? 'Expand' : 'Collapse'"
+              >
+                <svg
+                  class="w-4 h-4 transition-transform"
+                  :class="{ 'rotate-180': collapsedRepos.has(repo.id) }"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+              </button>
+
+              <!-- Settings Button -->
+              <button
+                @click.stop="toggleRepoMenu(repo.id)"
+                class="p-1 text-[#606060] hover:text-[#909090] hover:bg-[#2a2a2a] rounded transition-colors"
+                title="Repository settings"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+              </button>
+            </div>
 
             <!-- Dropdown Menu for repo actions -->
             <div
               v-if="activeRepoMenu === repo.id"
-              class="absolute right-0 top-full mt-1 w-48 bg-[#2a2a2a] border border-[#444] rounded-lg shadow-xl z-50 overflow-hidden"
+              class="absolute right-4 top-full mt-1 w-48 bg-[#2a2a2a] border border-[#444] rounded-lg shadow-xl z-50 overflow-hidden"
             >
               <button
                 @click="openProject"
@@ -308,25 +346,57 @@ const cloneRepository = async () => {
             </div>
           </div>
 
-          <!-- Workspace List -->
-          <div v-if="repo.workspaces.length > 0">
-            <div
-              v-for="workspace in repo.workspaces"
-              :key="workspace.id"
-              :class="[
-                'flex items-start px-4 py-3 cursor-pointer hover:bg-[#2a2a2a] transition-colors',
-                selectedWorkspace === workspace.id ? 'bg-[#2a2a2a]' : ''
-              ]"
-              @click="selectedWorkspace = workspace.id"
-            >
-              <!-- Branch Icon -->
-              <svg class="w-4 h-4 mt-0.5 mr-3 text-[#808080] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 17h.01M17 7a2 2 0 100-4 2 2 0 000 4zM7 11a4 4 0 010-8M7 21a4 4 0 010-8m10-6v14"></path>
-              </svg>
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-[#e0e0e0] truncate">{{ workspace.branch || 'No branch' }}</div>
-                <div class="text-xs text-[#707070] mt-0.5">
-                  {{ workspace.directory_name || repo.name }} · {{ formatTime(workspace.updated_at) }}
+          <!-- Collapsible Content -->
+          <div v-if="!collapsedRepos.has(repo.id)">
+            <!-- New Workspace Row -->
+            <div class="relative flex items-center justify-between px-4 py-2 hover:bg-[#2a2a2a] cursor-pointer">
+              <button
+                @click="createNewWorkspace(repo.id)"
+                class="flex items-center text-[#808080] hover:text-[#b0b0b0] transition-colors"
+              >
+                <span class="text-lg mr-2">+</span>
+                <span class="text-sm">New workspace</span>
+              </button>
+              <button
+                @click.stop="toggleRepoMenu(repo.id)"
+                class="text-[#606060] hover:text-[#909090] transition-colors p-1"
+              >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z"></path>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Workspace List -->
+            <div v-if="repo.workspaces.length > 0">
+              <div
+                v-for="workspace in repo.workspaces"
+                :key="workspace.id"
+                :class="[
+                  'flex items-start px-4 py-3 cursor-pointer hover:bg-[#2a2a2a] transition-colors',
+                  selectedWorkspace === workspace.id ? 'bg-[#2a2a2a]' : ''
+                ]"
+                @click="selectedWorkspace = workspace.id"
+              >
+                <!-- Branch Icon -->
+                <svg class="w-4 h-4 mt-0.5 mr-3 text-[#808080] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 17h.01M17 7a2 2 0 100-4 2 2 0 000 4zM7 11a4 4 0 010-8M7 21a4 4 0 010-8m10-6v14"></path>
+                </svg>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-[#e0e0e0] truncate">{{ workspace.branch || 'No branch' }}</div>
+                  <div class="text-xs text-[#707070] mt-0.5 flex items-center">
+                    <span>{{ workspace.directory_name || repo.name }}</span>
+                    <span class="mx-1">·</span>
+                    <span>{{ formatTime(workspace.updated_at) }}</span>
+                  </div>
+                </div>
+                <!-- Git Changes Indicator -->
+                <div
+                  v-if="workspace.git_insertions !== undefined || workspace.git_deletions !== undefined"
+                  class="flex items-center space-x-2 ml-2 text-xs flex-shrink-0"
+                >
+                  <span v-if="workspace.git_insertions" class="text-[#4ade80]">+{{ workspace.git_insertions }}</span>
+                  <span v-if="workspace.git_deletions" class="text-[#f87171]">-{{ workspace.git_deletions }}</span>
                 </div>
               </div>
             </div>

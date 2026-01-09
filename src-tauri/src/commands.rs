@@ -13,6 +13,102 @@ pub struct RepoWithWorkspaces {
     pub workspaces: Vec<Workspace>,
 }
 
+/// Get the last active time for a workspace (last commit time or current time if there are uncommitted changes)
+fn get_last_active_time(repo_path: &str, workspace_directory: &str) -> Option<String> {
+    let home_dir = dirs::home_dir()?;
+    let repo_name = Path::new(repo_path).file_name()?.to_str()?;
+    let worktree_path = home_dir
+        .join("letsvibe-workspaces")
+        .join(repo_name)
+        .join(workspace_directory);
+
+    if !worktree_path.exists() {
+        return None;
+    }
+
+    // Check if there are uncommitted changes
+    let status_output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree_path)
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .ok()?;
+
+    // If there are uncommitted changes, use current time
+    if status_output.status.success() && !status_output.stdout.is_empty() {
+        return Some(chrono::Utc::now().to_rfc3339());
+    }
+
+    // Otherwise, get the last commit time
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree_path)
+        .arg("log")
+        .arg("-1")
+        .arg("--format=%aI")
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let timestamp = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !timestamp.is_empty() {
+            return Some(timestamp);
+        }
+    }
+
+    None
+}
+
+/// Calculate git statistics for a workspace
+fn get_git_stats(repo_path: &str, workspace_directory: &str) -> Option<(i64, i64)> {
+    // Calculate worktree path
+    let home_dir = dirs::home_dir()?;
+    let repo_name = Path::new(repo_path).file_name()?.to_str()?;
+    let worktree_path = home_dir
+        .join("letsvibe-workspaces")
+        .join(repo_name)
+        .join(workspace_directory);
+
+    if !worktree_path.exists() {
+        return None;
+    }
+
+    // Get the parent branch (initialization_parent_branch) for comparison
+    // For now, we'll use HEAD to compare against the working tree changes
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&worktree_path)
+        .arg("diff")
+        .arg("--numstat")
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let diff_output = String::from_utf8_lossy(&output.stdout);
+    let mut total_insertions: i64 = 0;
+    let mut total_deletions: i64 = 0;
+
+    for line in diff_output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            if let (Ok(insertions), Ok(deletions)) = (parts[0].parse::<i64>(), parts[1].parse::<i64>()) {
+                total_insertions += insertions;
+                total_deletions += deletions;
+            }
+        }
+    }
+
+    if total_insertions > 0 || total_deletions > 0 {
+        Some((total_insertions, total_deletions))
+    } else {
+        None
+    }
+}
+
 #[tauri::command]
 pub async fn get_repositories(state: State<'_, AppState>) -> Result<Vec<RepoWithWorkspaces>, String> {
     let db = state.db.lock().await;
@@ -25,13 +121,31 @@ pub async fn get_repositories(state: State<'_, AppState>) -> Result<Vec<RepoWith
 
     let mut result = Vec::new();
     for repo in repos {
-        let workspaces: Vec<Workspace> = sqlx::query_as(
+        let mut workspaces: Vec<Workspace> = sqlx::query_as(
             "SELECT * FROM workspaces WHERE repository_id = ? ORDER BY updated_at DESC",
         )
         .bind(&repo.id)
         .fetch_all(pool)
         .await
         .map_err(|e| e.to_string())?;
+
+        // Populate git statistics and last active time for each workspace
+        if let Some(repo_path) = &repo.root_path {
+            for workspace in &mut workspaces {
+                if let Some(directory_name) = &workspace.directory_name {
+                    // Get git statistics
+                    if let Some((insertions, deletions)) = get_git_stats(repo_path, directory_name) {
+                        workspace.git_insertions = Some(insertions);
+                        workspace.git_deletions = Some(deletions);
+                    }
+
+                    // Get last active time
+                    if let Some(last_active) = get_last_active_time(repo_path, directory_name) {
+                        workspace.updated_at = last_active;
+                    }
+                }
+            }
+        }
 
         result.push(RepoWithWorkspaces { repo, workspaces });
     }
