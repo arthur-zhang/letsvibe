@@ -12,12 +12,12 @@ export function CodeViewer({ content, fileName, filePath }: CodeViewerProps) {
   const language = detectLanguage(fileName);
 
   return (
-    <div className="h-full flex flex-col bg-[#1e1e1e]">
-      <div className="px-4 py-2 border-b border-[#333] flex items-center justify-between">
+    <div className="h-full flex flex-col bg-[#1e1e1e] overflow-hidden">
+      <div className="flex-shrink-0 px-4 py-2 border-b border-[#333] flex items-center justify-between">
         <div className="text-sm text-[#909090]">{filePath}</div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto min-h-0">
         <SyntaxHighlighter
           language={language}
           style={vscDarkPlus}

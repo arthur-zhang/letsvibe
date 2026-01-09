@@ -15,6 +15,8 @@ interface AppContextType {
   selectedWorkspace: string | null;
   showTerminal: boolean;
   isLoading: boolean;
+  sidebarWidth: number;
+  explorerWidth: number;
 
   // 操作方法
   loadRepositories: () => Promise<void>;
@@ -29,6 +31,8 @@ interface AppContextType {
   deleteWorkspace: (id: string) => Promise<void>;
   addTerminalOutput: (message: string, type?: 'success' | 'error' | 'info') => void;
   toggleTerminal: () => void;
+  setSidebarWidth: React.Dispatch<React.SetStateAction<number>>;
+  setExplorerWidth: React.Dispatch<React.SetStateAction<number>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -45,6 +49,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
   const [showTerminal, setShowTerminal] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(288); // w-72 = 18rem = 288px
+  const [explorerWidth, setExplorerWidth] = useState(256); // w-64 = 16rem = 256px
 
   const addTerminalOutput = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const prefix = type === 'success' ? '✓' : type === 'error' ? '✗' : '•';
@@ -232,6 +238,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteWorkspace,
     addTerminalOutput,
     toggleTerminal,
+    sidebarWidth,
+    explorerWidth,
+    setSidebarWidth,
+    setExplorerWidth,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

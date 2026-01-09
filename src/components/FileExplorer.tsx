@@ -6,7 +6,7 @@ export function FileExplorer() {
   const { files, selectedWorkspace, openFile } = useApp();
 
   return (
-    <div className="w-64 bg-[#1e1e1e] border-l border-[#333] flex flex-col">
+    <div className="w-full bg-[#1e1e1e] border-l border-[#333] flex flex-col h-full">
       <div className="px-4 py-3 border-b border-[#333]">
         <h3 className="text-sm font-semibold text-[#e0e0e0]">EXPLORER</h3>
       </div>
