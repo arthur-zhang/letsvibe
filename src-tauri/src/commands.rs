@@ -436,11 +436,13 @@ pub async fn get_workspace_files(
     }
 
     // Read directory structure
-    read_directory_structure(&worktree_path)
+    read_directory_structure(&worktree_path, 0)
 }
 
-/// Recursively read directory structure
-fn read_directory_structure(path: &Path) -> Result<Vec<FileItem>, String> {
+/// Recursively read directory structure with depth limit
+fn read_directory_structure(path: &Path, depth: usize) -> Result<Vec<FileItem>, String> {
+    const MAX_DEPTH: usize = 10; // Limit recursion depth to prevent performance issues
+
     let mut items = Vec::new();
 
     let entries = std::fs::read_dir(path)
@@ -463,12 +465,17 @@ fn read_directory_structure(path: &Path) -> Result<Vec<FileItem>, String> {
             .map_err(|e| format!("Failed to get metadata: {}", e))?;
 
         if metadata.is_dir() {
-            // For directories, we don't recursively load children yet
-            // They will be loaded on demand when the user expands them
+            // Recursively load children for directories, up to max depth
+            let child_path = entry.path();
+            let children = if depth < MAX_DEPTH {
+                read_directory_structure(&child_path, depth + 1)?
+            } else {
+                Vec::new() // Stop recursion at max depth
+            };
             items.push(FileItem {
                 name: file_name,
                 file_type: "folder".to_string(),
-                children: Some(Vec::new()),
+                children: Some(children),
             });
         } else {
             items.push(FileItem {
@@ -489,4 +496,67 @@ fn read_directory_structure(path: &Path) -> Result<Vec<FileItem>, String> {
     });
 
     Ok(items)
+}
+
+/// Read file content from a workspace
+#[tauri::command]
+pub async fn read_file_content(
+    state: State<'_, AppState>,
+    workspace_id: String,
+    file_path: String,
+) -> Result<String, String> {
+    let db = state.db.lock().await;
+    let pool = db.as_ref().ok_or("Database not initialized")?;
+
+    // Get workspace info
+    let workspace: Workspace = sqlx::query_as("SELECT * FROM workspaces WHERE id = ?")
+        .bind(&workspace_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Workspace not found: {}", e))?;
+
+    // Get repository info
+    let repo_id = workspace
+        .repository_id
+        .ok_or("Workspace has no repository")?;
+    let repo: Repo = sqlx::query_as("SELECT * FROM repos WHERE id = ?")
+        .bind(&repo_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| format!("Repository not found: {}", e))?;
+
+    let repo_path = repo.root_path.ok_or("Repository has no root path")?;
+    let directory_name = workspace
+        .directory_name
+        .ok_or("Workspace has no directory name")?;
+
+    // Calculate worktree path
+    let home_dir = dirs::home_dir().ok_or("Cannot determine home directory")?;
+    let repo_name = Path::new(&repo_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Cannot determine repository name")?;
+    let worktree_path = home_dir
+        .join("letsvibe-workspaces")
+        .join(repo_name)
+        .join(&directory_name);
+
+    // Build full file path
+    let full_path = worktree_path.join(&file_path);
+
+    // Security check: ensure the file is within the worktree
+    let canonical_worktree = worktree_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to canonicalize worktree path: {}", e))?;
+    let canonical_file = full_path
+        .canonicalize()
+        .map_err(|e| format!("File not found: {}", e))?;
+
+    if !canonical_file.starts_with(&canonical_worktree) {
+        return Err("Access denied: file is outside workspace".to_string());
+    }
+
+    // Read file content
+    std::fs::read_to_string(&full_path)
+        .map_err(|e| format!("Failed to read file: {}", e))
 }

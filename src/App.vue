@@ -2,6 +2,8 @@
 import { ref, onMounted } from "vue";
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import FileTree from './components/FileTree.vue';
+import CodeViewer from './components/CodeViewer.vue';
 
 interface Workspace {
   id: string;
@@ -38,7 +40,16 @@ interface FileItem {
   children?: FileItem[];
 }
 
+interface OpenFile {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+}
+
 const repositories = ref<RepoWithWorkspaces[]>([]);
+const openFiles = ref<OpenFile[]>([]);
+const activeFileId = ref<string | null>(null);
 
 const isLoading = ref<boolean>(true);
 
@@ -47,6 +58,23 @@ const loadRepositories = async () => {
     isLoading.value = true;
     const repos = await invoke<RepoWithWorkspaces[]>('get_repositories');
     repositories.value = repos;
+
+    // Auto-select the first workspace if available
+    // Try each workspace until one successfully loads
+    if (repos.length > 0) {
+      for (const repo of repos) {
+        if (repo.workspaces && repo.workspaces.length > 0) {
+          for (const workspace of repo.workspaces) {
+            await selectWorkspace(workspace.id);
+            // Check if files were successfully loaded
+            if (files.value.length > 0) {
+              console.log(`Successfully auto-selected workspace: ${workspace.id}`);
+              return;
+            }
+          }
+        }
+      }
+    }
   } catch (error) {
     console.error('Failed to load repositories:', error);
     terminalOutput.value.push(`✗ Error loading repositories: ${error}`);
@@ -97,6 +125,10 @@ const selectWorkspace = async (workspaceId: string) => {
 
   console.log('Selecting workspace:', workspaceId);
 
+  await loadWorkspaceFiles(workspaceId);
+};
+
+const loadWorkspaceFiles = async (workspaceId: string) => {
   // Load workspace files
   try {
     console.log('Calling get_workspace_files...');
@@ -111,6 +143,73 @@ const selectWorkspace = async (workspaceId: string) => {
     terminalOutput.value.push(`✗ Error loading workspace files: ${error}`);
     // Reset to empty on error
     files.value = [];
+  }
+};
+
+const refreshFiles = async () => {
+  if (selectedWorkspace.value) {
+    terminalOutput.value.push('↻ Refreshing files...');
+    await loadWorkspaceFiles(selectedWorkspace.value);
+  }
+};
+
+const openFile = async (path: string, name: string) => {
+  if (!selectedWorkspace.value) return;
+
+  const fileId = `${selectedWorkspace.value}:${path}`;
+
+  // Check if file is already open
+  const existingFile = openFiles.value.find(f => f.id === fileId);
+  if (existingFile) {
+    activeFileId.value = fileId;
+    return;
+  }
+
+  // Load file content
+  try {
+    const content = await invoke<string>('read_file_content', {
+      workspaceId: selectedWorkspace.value,
+      filePath: path,
+    });
+
+    openFiles.value.push({
+      id: fileId,
+      name,
+      path,
+      content,
+    });
+    activeFileId.value = fileId;
+  } catch (error) {
+    console.error('Failed to load file:', error);
+    terminalOutput.value.push(`✗ Error loading file: ${error}`);
+  }
+};
+
+const closeFile = (fileId: string) => {
+  const index = openFiles.value.findIndex(f => f.id === fileId);
+  if (index !== -1) {
+    openFiles.value.splice(index, 1);
+
+    // If closing active file, switch to another or clear
+    if (activeFileId.value === fileId) {
+      activeFileId.value = openFiles.value.length > 0
+        ? openFiles.value[openFiles.value.length - 1].id
+        : null;
+    }
+  }
+};
+
+const getActiveFile = () => {
+  return openFiles.value.find(f => f.id === activeFileId.value);
+};
+
+const copyToClipboard = async (content: string) => {
+  try {
+    await navigator.clipboard.writeText(content);
+    terminalOutput.value.push('✓ Copied to clipboard');
+  } catch (error) {
+    console.error('Failed to copy:', error);
+    terminalOutput.value.push(`✗ Failed to copy: ${error}`);
   }
 };
 
@@ -471,15 +570,29 @@ const cloneRepository = async () => {
 
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col">
-      <!-- Top Bar -->
-      <div class="h-12 bg-[#252525] border-b border-[#333] flex items-center px-4">
-        <div class="flex items-center space-x-2">
-          <svg class="w-5 h-5 text-[#909090]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path>
+      <!-- File Tabs -->
+      <div v-if="openFiles.length > 0" class="flex items-center bg-[#252525] border-b border-[#333] overflow-x-auto">
+        <div
+          v-for="file in openFiles"
+          :key="file.id"
+          :class="[
+            'flex items-center px-4 py-2 border-r border-[#333] cursor-pointer text-sm group relative',
+            activeFileId === file.id ? 'bg-[#1a1a1a]' : 'hover:bg-[#2d2d2d]'
+          ]"
+          @click="activeFileId = file.id"
+        >
+          <svg class="w-4 h-4 mr-2 text-[#909090]" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path>
           </svg>
-          <span class="text-sm font-medium text-[#d0d0d0]">letsvibe/dakar</span>
-          <span class="text-xs text-[#606060]">•</span>
-          <span class="text-xs text-[#808080]">arthur-zhang/conductor-layout</span>
+          <span class="text-[#c0c0c0]">{{ file.name }}</span>
+          <button
+            @click.stop="closeFile(file.id)"
+            class="ml-2 p-0.5 hover:bg-[#383838] rounded opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <svg class="w-3 h-3 text-[#909090]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -487,56 +600,36 @@ const cloneRepository = async () => {
       <div class="flex-1 flex flex-col overflow-hidden">
         <!-- Main Content -->
         <div :class="showTerminal ? 'flex-1' : 'h-full'" class="overflow-auto">
-          <div class="p-6">
+          <!-- File Content View -->
+          <div v-if="getActiveFile()" class="h-full flex flex-col bg-[#1a1a1a]">
+            <!-- File Header -->
+            <div class="px-4 py-2 border-b border-[#333] flex items-center justify-between bg-[#252525]">
+              <span class="text-xs text-[#808080]">{{ getActiveFile()?.path }}</span>
+              <button
+                @click="copyToClipboard(getActiveFile()?.content || '')"
+                class="p-1 hover:bg-[#383838] rounded transition-colors"
+                title="Copy content"
+              >
+                <svg class="w-4 h-4 text-[#909090]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+              </button>
+            </div>
+
+            <!-- File Content with Syntax Highlighting -->
+            <CodeViewer
+              :code="getActiveFile()?.content || ''"
+              :filename="getActiveFile()?.name || ''"
+            />
+          </div>
+
+          <!-- Welcome Screen -->
+          <div v-else class="p-6">
             <div class="max-w-4xl mx-auto">
               <h1 class="text-3xl font-bold mb-4 text-[#e0e0e0]">Welcome to Conductor</h1>
               <p class="text-[#909090] mb-6">
-                A powerful workspace manager for your development projects. Select a workspace from the left sidebar to get started.
+                Select a file from the Explorer to view its content.
               </p>
-
-              <div class="bg-[#252525] rounded-lg p-6 border border-[#333]">
-                <h2 class="text-xl font-semibold mb-3 text-[#d0d0d0]">Current Workspace</h2>
-                <div class="space-y-2 text-sm">
-                  <div class="flex">
-                    <span class="text-[#808080] w-24">Project:</span>
-                    <span class="text-[#d0d0d0]">letsvibe/dakar</span>
-                  </div>
-                  <div class="flex">
-                    <span class="text-[#808080] w-24">Branch:</span>
-                    <span class="text-[#4a9eff]">arthur-zhang/conductor-layout</span>
-                  </div>
-                  <div class="flex">
-                    <span class="text-[#808080] w-24">Status:</span>
-                    <span class="text-[#4ade80]">Active</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-6 grid grid-cols-2 gap-4">
-                <div class="bg-[#252525] rounded-lg p-4 border border-[#333]">
-                  <h3 class="text-sm font-semibold text-[#808080] mb-2">Quick Actions</h3>
-                  <div class="space-y-2">
-                    <button class="w-full text-left px-3 py-2 bg-[#2d2d2d] hover:bg-[#383838] rounded text-sm transition-colors text-[#d0d0d0]">
-                      Run Build
-                    </button>
-                    <button class="w-full text-left px-3 py-2 bg-[#2d2d2d] hover:bg-[#383838] rounded text-sm transition-colors text-[#d0d0d0]">
-                      Run Tests
-                    </button>
-                    <button class="w-full text-left px-3 py-2 bg-[#2d2d2d] hover:bg-[#383838] rounded text-sm transition-colors text-[#d0d0d0]">
-                      Git Status
-                    </button>
-                  </div>
-                </div>
-
-                <div class="bg-[#252525] rounded-lg p-4 border border-[#333]">
-                  <h3 class="text-sm font-semibold text-[#808080] mb-2">Recent Activity</h3>
-                  <div class="space-y-2 text-xs text-[#808080]">
-                    <div>• Installed Tailwind CSS</div>
-                    <div>• Created layout components</div>
-                    <div>• Updated configuration</div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -575,11 +668,21 @@ const cloneRepository = async () => {
 
     <!-- Right Sidebar - File Explorer -->
     <div class="w-64 bg-[#252525] border-l border-[#333] flex flex-col">
-      <div class="p-4 border-b border-[#333]">
+      <div class="p-4 border-b border-[#333] flex items-center justify-between">
         <h2 class="text-sm font-semibold text-[#808080] uppercase tracking-wider">Explorer</h2>
+        <button
+          v-if="selectedWorkspace"
+          @click="refreshFiles"
+          class="p-1 text-[#606060] hover:text-[#909090] hover:bg-[#2a2a2a] rounded transition-colors"
+          title="Refresh files"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+        </button>
       </div>
       <div class="flex-1 overflow-y-auto p-2">
-        <FileTree :items="files" />
+        <FileTree :items="files" @file-click="openFile" />
       </div>
     </div>
   </div>
@@ -639,108 +742,40 @@ const cloneRepository = async () => {
   </div>
 </template>
 
-<script lang="ts">
-import { defineComponent, type PropType } from 'vue';
-
-interface FileItemType {
-  name: string;
-  type: 'file' | 'folder';
-  children?: FileItemType[];
+<style>
+/* Global scrollbar styling - dark theme, vertical visible, horizontal hidden */
+* {
+  scrollbar-width: thin; /* Firefox - thin scrollbar */
+  scrollbar-color: #3a3a3a #252525; /* Firefox - thumb and track colors */
 }
 
-const FileTree = defineComponent({
-  name: 'FileTree',
-  props: {
-    items: {
-      type: Array as PropType<FileItemType[]>,
-      required: true,
-    },
-    level: {
-      type: Number,
-      default: 0,
-    },
-  },
-  data() {
-    return {
-      expandedFolders: new Set<string>()
-    };
-  },
-  watch: {
-    items: {
-      handler() {
-        // Reset expanded folders when items change
-        this.expandedFolders.clear();
-      },
-      deep: true,
-    },
-  },
-  methods: {
-    toggleFolder(name: string) {
-      if (this.expandedFolders.has(name)) {
-        this.expandedFolders.delete(name);
-      } else {
-        this.expandedFolders.add(name);
-      }
-    }
-  },
-  template: `
-    <div v-if="items && items.length > 0">
-      <div
-        v-for="item in items"
-        :key="item.name"
-        class="select-none"
-      >
-        <div
-          :class="[
-            'flex items-center px-2 py-1 hover:bg-[#2d2d2d] rounded cursor-pointer text-sm',
-          ]"
-          :style="{ paddingLeft: (level * 12 + 8) + 'px' }"
-          @click="item.type === 'folder' ? toggleFolder(item.name) : null"
-        >
-          <svg
-            v-if="item.type === 'folder'"
-            class="w-4 h-4 mr-2 text-[#909090] transition-transform"
-            :class="{ 'rotate-90': expandedFolders.has(item.name) }"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-          </svg>
-          <svg
-            v-if="item.type === 'folder'"
-            class="w-4 h-4 mr-2 text-[#4a9eff]"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"></path>
-          </svg>
-          <svg
-            v-else
-            class="w-4 h-4 mr-2 text-[#909090]"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" clip-rule="evenodd"></path>
-          </svg>
-          <span class="text-[#c0c0c0]">{{ item.name }}</span>
-        </div>
-        <FileTree
-          v-if="item.type === 'folder' && item.children && expandedFolders.has(item.name)"
-          :items="item.children"
-          :level="level + 1"
-        />
-      </div>
-    </div>
-    <div v-else class="px-2 py-4 text-xs text-[#606060] text-center">
-      No files to display
-    </div>
-  `,
-});
+/* Webkit browsers (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 12px; /* Vertical scrollbar width */
+  height: 0; /* Hide horizontal scrollbar */
+}
 
-export default {
-  components: {
-    FileTree,
-  },
-};
-</script>
+*::-webkit-scrollbar-track {
+  background: #252525; /* Track color - darker background */
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #3a3a3a; /* Thumb color - medium gray */
+  border-radius: 6px;
+  border: 2px solid #252525; /* Border to create padding effect */
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #4a4a4a; /* Lighter gray on hover */
+}
+
+/* Hide horizontal scrollbar completely */
+* {
+  overflow-x: hidden;
+}
+
+/* Re-enable overflow-x for specific elements that need it */
+.overflow-x-auto {
+  overflow-x: auto !important;
+}
+</style>
