@@ -4,18 +4,26 @@ import type { FileItem } from '@/types';
 interface FileTreeItemProps {
   item: FileItem;
   level: number;
-  onFileClick: (file: FileItem) => void;
+  parentPath: string;
+  onFileClick: (path: string, name: string) => void;
 }
 
-export function FileTreeItem({ item, level, onFileClick }: FileTreeItemProps) {
+export function FileTreeItem({ item, level, parentPath, onFileClick }: FileTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const isFolder = item.type === 'folder';
 
   const handleClick = () => {
-    if (item.is_directory) {
+    if (isFolder) {
       setIsExpanded(!isExpanded);
     } else {
-      onFileClick(item);
+      // Build the full path
+      const fullPath = parentPath ? `${parentPath}/${item.name}` : item.name;
+      onFileClick(fullPath, item.name);
     }
+  };
+
+  const getChildPath = () => {
+    return parentPath ? `${parentPath}/${item.name}` : item.name;
   };
 
   return (
@@ -25,24 +33,25 @@ export function FileTreeItem({ item, level, onFileClick }: FileTreeItemProps) {
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={handleClick}
       >
-        {item.is_directory && (
+        {isFolder && (
           <span className="text-[#909090] w-4">
             {isExpanded ? '▾' : '▸'}
           </span>
         )}
-        {!item.is_directory && <span className="w-4"></span>}
-        <span className={item.is_directory ? 'text-[#4a9eff]' : 'text-[#e0e0e0]'}>
+        {!isFolder && <span className="w-4"></span>}
+        <span className={isFolder ? 'text-[#4a9eff]' : 'text-[#e0e0e0]'}>
           {item.name}
         </span>
       </div>
 
-      {item.is_directory && isExpanded && item.children && (
+      {isFolder && isExpanded && item.children && (
         <div>
           {item.children.map((child) => (
             <FileTreeItem
-              key={child.path}
+              key={child.name}
               item={child}
               level={level + 1}
+              parentPath={getChildPath()}
               onFileClick={onFileClick}
             />
           ))}

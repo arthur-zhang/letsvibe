@@ -19,7 +19,7 @@ interface AppContextType {
   // 操作方法
   loadRepositories: () => Promise<void>;
   selectWorkspace: (id: string) => Promise<void>;
-  openFile: (file: FileItem) => Promise<void>;
+  openFile: (path: string, name: string) => Promise<void>;
   closeFile: (id: string) => void;
   setActiveFile: (id: string) => void;
   createWorkspace: (repoId: string) => Promise<void>;
@@ -81,11 +81,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [addTerminalOutput]);
 
-  const openFile = useCallback(async (file: FileItem) => {
-    if (file.is_directory) return;
-
+  const openFile = useCallback(async (path: string, name: string) => {
     // 检查文件是否已打开
-    const existingFile = openFiles.find(f => f.path === file.path);
+    const existingFile = openFiles.find(f => f.path === path);
     if (existingFile) {
       setActiveFileId(existingFile.id);
       return;
@@ -94,24 +92,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('Opening file with params:', {
         workspaceId: selectedWorkspace,
-        filePath: file.path,
-        fileObject: file
+        filePath: path,
+        fileName: name
       });
       const content = await invoke<string>('read_file_content', {
         workspaceId: selectedWorkspace,
-        filePath: file.path,
+        filePath: path,
       });
 
       const newFile: OpenFile = {
-        id: `${Date.now()}-${file.path}`,
-        name: file.name,
-        path: file.path,
+        id: `${Date.now()}-${path}`,
+        name: name,
+        path: path,
         content,
       };
 
       setOpenFiles(prev => [...prev, newFile]);
       setActiveFileId(newFile.id);
-      addTerminalOutput(`Opened file: ${file.name}`, 'success');
+      addTerminalOutput(`Opened file: ${name}`, 'success');
     } catch (error) {
       addTerminalOutput(`Failed to open file: ${error}`, 'error');
       console.error('Failed to open file:', error);

@@ -3,7 +3,7 @@ import type { FileItem } from '@/types';
 
 interface FileTreeProps {
   items: FileItem[];
-  onFileClick: (file: FileItem) => void;
+  onFileClick: (path: string, name: string) => void;
 }
 
 export function FileTree({ items, onFileClick }: FileTreeProps) {
@@ -19,9 +19,10 @@ export function FileTree({ items, onFileClick }: FileTreeProps) {
     <div className="text-sm">
       {items.map((item) => (
         <FileTreeItem
-          key={item.path}
+          key={item.name}
           item={item}
           level={0}
+          parentPath=""
           onFileClick={onFileClick}
         />
       ))}

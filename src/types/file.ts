@@ -1,7 +1,6 @@
 export interface FileItem {
   name: string;
-  path: string;
-  is_directory: boolean;
+  type: 'file' | 'folder';
   children?: FileItem[];
 }
 
