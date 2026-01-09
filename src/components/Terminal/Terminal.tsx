@@ -4,7 +4,7 @@ export function Terminal() {
   const { terminalOutput, showTerminal, toggleTerminal } = useApp();
 
   return (
-    <div className="border-t border-[#333] bg-[#1e1e1e] flex flex-col">
+    <div className="flex-shrink-0 border-t border-[#333] bg-[#1e1e1e] flex flex-col">
       <div
         className="px-4 py-2 border-b border-[#333] flex items-center justify-between cursor-pointer hover:bg-[#252525]"
         onClick={toggleTerminal}
@@ -16,7 +16,7 @@ export function Terminal() {
       </div>
 
       {showTerminal && (
-        <div className="flex-1 overflow-auto p-4 font-mono text-xs">
+        <div className="h-48 overflow-auto p-4 font-mono text-xs">
           {terminalOutput.map((line, index) => (
             <div
               key={index}

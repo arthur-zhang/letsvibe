@@ -22,9 +22,9 @@ export function FileTabs() {
     <Tabs
       value={activeFileId || openFiles[0]?.id}
       onValueChange={setActiveFile}
-      className="h-full flex flex-col bg-[#1e1e1e]"
+      className="h-full flex flex-col bg-[#1e1e1e] overflow-hidden"
     >
-      <TabsList className="w-full h-10 justify-start rounded-none bg-[#252526] border-b border-[#333] p-0">
+      <TabsList className="flex-shrink-0 w-full h-10 justify-start rounded-none bg-[#252526] border-b border-[#333] p-0">
         {openFiles.map((file) => (
           <div
             key={file.id}
@@ -54,7 +54,7 @@ export function FileTabs() {
         <TabsContent
           key={file.id}
           value={file.id}
-          className="flex-1 m-0 h-full data-[state=inactive]:hidden"
+          className="flex-1 m-0 min-h-0 overflow-hidden data-[state=inactive]:hidden"
         >
           <CodeViewer
             content={file.content}
