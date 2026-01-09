@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FileItem } from '@/types';
+import { getFileIcon } from '@/utils/fileIcons';
 
 interface FileTreeItemProps {
   item: FileItem;
@@ -34,11 +35,14 @@ export function FileTreeItem({ item, level, parentPath, onFileClick }: FileTreeI
         onClick={handleClick}
       >
         {isFolder && (
-          <span className="text-[#909090] w-4">
+          <span className="text-[#909090] w-4 flex-shrink-0">
             {isExpanded ? '▾' : '▸'}
           </span>
         )}
-        {!isFolder && <span className="w-4"></span>}
+        {!isFolder && <span className="w-4 flex-shrink-0"></span>}
+        <span className="flex-shrink-0">
+          {getFileIcon(item.name, isFolder, isExpanded)}
+        </span>
         <span className={isFolder ? 'text-[#4a9eff]' : 'text-[#e0e0e0]'}>
           {item.name}
         </span>
